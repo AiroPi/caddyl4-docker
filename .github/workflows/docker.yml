@@ -6,7 +6,8 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/caddy-l4
+  REGISTRY: ghcr.io
+  IMAGE_NAME: airopi/caddy-l4
 
 jobs:
   check-and-build:
@@ -33,15 +34,15 @@ jobs:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Check if we already built this version
         id: check_image
         run: |
-          if docker manifest inspect ${{ env.IMAGE_NAME }}:${{ steps.caddy_version.outputs.version }} > /dev/null 2>&1; then
-            echo "Image ${{ env.IMAGE_NAME }}:${{ steps.caddy_version.outputs.version }} already exists. Skipping build."
+          if docker manifest inspect ${{ env.REGISTRY}}/${{ env.IMAGE_NAME }}:${{ steps.caddy_version.outputs.version }} > /dev/null 2>&1; then
+            echo "Image ${{ env.REGISTRY}}/${{ env.IMAGE_NAME }}:${{ steps.caddy_version.outputs.version }} already exists. Skipping build."
             echo "build_needed=false" >> $GITHUB_OUTPUT
           else
             echo "New version detected. Proceeding to build."
@@ -54,13 +55,12 @@ jobs:
 
       - name: Build and push
         if: steps.check_image.outputs.build_needed == 'true'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
-          # This overrides the ARG version=2.11.3 in your Dockerfile
           build-args: |
             version=${{ steps.caddy_version.outputs.version }}
           tags: |
-            ${{ env.IMAGE_NAME }}:${{ steps.caddy_version.outputs.version }}
-            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY}}/${{ env.IMAGE_NAME }}:${{ steps.caddy_version.outputs.version }}
+            ${{ env.REGISTRY}}/${{ env.IMAGE_NAME }}:latest
