@@ -10,16 +10,15 @@ env:
   IMAGE_NAME: airopi/caddy-l4
 
 jobs:
-  check-and-build:
+  check-version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.caddy_version.outputs.version }}
+      build_needed: ${{ steps.check_image.outputs.build_needed }}
     permissions:
       contents: read
-      packages: write
-
+      packages: read
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Get latest Caddy version from Docker Hub
         id: caddy_version
         run: |
@@ -49,23 +48,30 @@ jobs:
             echo "build_needed=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Set up QEMU
-        if: steps.check_image.outputs.build_needed == 'true'
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        if: steps.check_image.outputs.build_needed == 'true'
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
-        if: steps.check_image.outputs.build_needed == 'true'
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64/v8,linux/arm/v7,linux/arm/v6,linux/ppc64le,linux/riscv64,linux/s390x
-          push: true
-          build-args: |
-            version=${{ steps.caddy_version.outputs.version }}
-          tags: |
-            ${{ env.REGISTRY}}/${{ env.IMAGE_NAME }}:${{ steps.caddy_version.outputs.version }}
-            ${{ env.REGISTRY}}/${{ env.IMAGE_NAME }}:latest
+  build:
+    needs: check-version
+    if: needs.check-version.outputs.build_needed == 'true'
+    uses: docker/github-builder/.github/workflows/build.yml@v1
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      output: image
+      push: true
+      platforms: linux/amd64,linux/arm64/v8,linux/arm/v7,linux/arm/v6,linux/ppc64le,linux/riscv64,linux/s390x
+      # Pass the target image name (hardcoding since env context isn't available in 'with' block)
+      meta-images: ghcr.io/airopi/caddy-l4
+      # Map the dynamic tags using Docker's metadata format
+      meta-tags: |
+        type=raw,value=${{ needs.check-version.outputs.version }}
+        type=raw,value=latest
+      # Pass the Caddy version as a build argument
+      build-args: |
+        version=${{ needs.check-version.outputs.version }}
+    secrets:
+      # Authenticate to GHCR using the built-in GitHub token
+      registry-auths: |
+        - registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
